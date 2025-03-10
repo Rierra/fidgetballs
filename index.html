@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Falling Ball</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            text-align: center;
+            background: linear-gradient(to bottom, skyblue, white);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: white;
+            border: 2px solid black;
+            z-index: 1000;
+            margin: 0 5px;
+        }
+        #buttonContainer {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            z-index: 1000;
+        }
+        #autoFallButton {
+            background: #4CAF50;
+            color: white;
+        }
+        #autoFallButton.active {
+            background: #f44336;
+        }
+        .ball {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: red;
+            border-radius: 50%;
+            border: 2px solid black; /* Adds a black outline */
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #ballCounter {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        #sizePopup {
+               display: none;
+               position: fixed;
+               top: 50%;
+               left: 50%;
+               transform: translate(-50%, -50%);
+               background: white;
+               padding: 20px;
+               border: 2px solid black;
+               text-align: center;
+               z-index: 2000;
+               box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        #previewBall {
+               margin: 10px auto;
+               background: red;
+               border-radius: 50%;
+               border: 2px solid black;
+         }
+    </style>
+</head>
+<body>
+    <div id="buttonContainer">
+        <button id="spawnButton" class="button">Drop Ball</button>
+        <button id="autoFallButton" class="button">Auto Fall: OFF</button>
+        <button id="sizeButton" class="button">Change Ball Size</button>
+
+    </div>
+    <div id="ballCounter">Balls: 0</div>
+    <div id="container"></div>
+
+    <div id="sizePopup">
+      <h3>Adjust Ball Size</h3>
+      <input type="range" id="sizeSlider" min="10" max="100" value="30">
+      <div id="previewBall"></div>
+      <button id="confirmSize">Apply</button>
+      <button id="closePopup">Cancel</button>
+  </div>
+  
+
+    <script>
+        let balls = []; // Store all balls
+        let ballCount = 0;
+        const ballSize = 30; // Ball diameter
+        const ballRadius = ballSize / 2;
+        let autoFallActive = false;
+        let autoFallInterval = null;
+        let autoFallSpeed = 500; // Time in ms between auto-spawns
+        
+        // Update the counter display
+        function updateCounter() {
+            document.getElementById("ballCounter").innerText = `Balls: ${ballCount}`;
+        }
+        
+        // Toggle auto fall
+        document.getElementById("autoFallButton").addEventListener("click", toggleAutoFall);
+        
+        function toggleAutoFall() {
+            autoFallActive = !autoFallActive;
+            const button = document.getElementById("autoFallButton");
+            
+            if (autoFallActive) {
+                button.textContent = "Auto Fall: ON";
+                button.classList.add("active");
+                // Start auto-spawning
+                autoFallInterval = setInterval(spawnBall, autoFallSpeed);
+            } else {
+                button.textContent = "Auto Fall: OFF";
+                button.classList.remove("active");
+                // Stop auto-spawning
+                clearInterval(autoFallInterval);
+            }
+        }
+
+        // Spawn ball on button click
+        document.getElementById("spawnButton").addEventListener("click", spawnBall);
+
+        function spawnBall() {
+            // Create new ball
+            let ball = document.createElement("div");
+            ball.classList.add("ball");
+            ball.style.width = currentBallSize + "px";
+            ball.style.height = currentBallSize + "px";
+            let container = document.getElementById("container");
+            container.appendChild(ball);
+            
+            // Increment and update counter
+            ballCount++;
+            updateCounter();
+
+            // Random color for each ball
+            const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'];
+            ball.style.background = colors[Math.floor(Math.random() * colors.length)];
+
+            let posX = Math.random() * (container.clientWidth - currentBallSize); // Updated to use currentBallSize
+            let posY = 0;
+            let velocityY = 2;
+            let velocityX = (Math.random() - 0.5) * 3;
+            let gravity = 0.8;
+            let bounceFactor = 0.6;
+            let floor = container.clientHeight - currentBallSize; // Updated to use currentBallSize
+            let friction = 0.98;
+            
+            // Store the ball's properties for collision detection
+            ball.posX = posX;
+            ball.posY = posY;
+            ball.velocityX = velocityX;
+            ball.velocityY = velocityY;
+            ball.isMoving = true;
+            ball.settled = false;
+
+            ball.style.left = posX + "px";
+            ball.style.top = posY + "px";
+
+            function resolveCollision(otherBall) {
+                // Calculate direction vector between the balls
+                let dx = otherBall.posX - ball.posX;
+                let dy = otherBall.posY - ball.posY;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Minimum distance to avoid overlap
+                let minDistance = ballSize;
+                
+                if (distance < minDistance) {
+                    // Calculate the overlap amount
+                    let overlap = minDistance - distance;
+                    
+                    // Normalize the direction vector
+                    if (distance > 0) {
+                        dx /= distance;
+                        dy /= distance;
+                    } else {
+                        // Balls are exactly at the same position - push in random direction
+                        let angle = Math.random() * Math.PI * 2;
+                        dx = Math.cos(angle);
+                        dy = Math.sin(angle);
+                    }
+                    
+                    // Move balls apart to resolve overlap
+                    // Movement based on relative mass/velocity
+                    let moveFactor1 = 0.5; // Split the movement equally
+                    let moveFactor2 = 0.5;
+                    
+                    // If the other ball is settled, move only the current ball
+                    if (otherBall.settled) {
+                        moveFactor1 = 1;
+                        moveFactor2 = 0;
+                    }
+                    
+                    // Move balls apart
+                    ball.posX -= dx * overlap * moveFactor1;
+                    ball.posY -= dy * overlap * moveFactor1;
+                    
+                    // Only move the other ball if it's not settled
+                    if (!otherBall.settled) {
+                        otherBall.posX += dx * overlap * moveFactor2;
+                        otherBall.posY += dy * overlap * moveFactor2;
+                        otherBall.style.left = otherBall.posX + "px";
+                        otherBall.style.top = otherBall.posY + "px";
+                    }
+                    
+                    // Calculate velocity exchange
+                    // Only exchange if the current ball is still moving significantly
+                    if (Math.abs(ball.velocityY) > 0.5 || Math.abs(ball.velocityX) > 0.5) {
+                        // Calculate new velocities (simplified physics)
+                        let nx = dx;
+                        let ny = dy;
+                        
+                        // Velocity component along collision normal
+                        let dotProduct = ball.velocityX * nx + ball.velocityY * ny;
+                        
+                        // Apply a reduced bounce effect
+                        ball.velocityX -= dotProduct * nx * bounceFactor;
+                        ball.velocityY -= dotProduct * ny * bounceFactor;
+                        
+                        // If other ball is not settled, affect its velocity too
+                        if (!otherBall.settled && !otherBall.isMoving) {
+                            // Restart motion for the other ball if it gets hit hard enough
+                            let impactForce = Math.abs(dotProduct);
+                            if (impactForce > 2) {
+                                otherBall.isMoving = true;
+                                otherBall.velocityX += dotProduct * nx * bounceFactor * 0.3;
+                                otherBall.velocityY += dotProduct * ny * bounceFactor * 0.3;
+                                
+                                // Restart animation for the other ball
+                                animateBall(otherBall);
+                            }
+                        }
+                    }
+                    
+                    return true; // Collision was resolved
+                }
+                
+                return false; // No collision
+            }
+            
+            function checkBoundaries() {
+                // Floor collision
+                if (ball.posY >= floor) {
+                    ball.posY = floor;
+                    ball.velocityY *= -bounceFactor;
+                    
+                    // Check if ball should stop
+                    if (Math.abs(ball.velocityY) < 0.5 && Math.abs(ball.velocityX) < 0.5) {
+                        ball.velocityY = 0;
+                        ball.velocityX = 0;
+                        ball.isMoving = false;
+                        ball.settled = true;
+                    }
+                }
+                
+                // Wall collisions
+                if (ball.posX <= 0) {
+                    ball.posX = 0;
+                    ball.velocityX *= -bounceFactor;
+                } else if (ball.posX >= container.clientWidth - ballSize) {
+                    ball.posX = container.clientWidth - ballSize;
+                    ball.velocityX *= -bounceFactor;
+                }
+            }
+            
+            function checkCollisions() {
+                let hasCollisions = false;
+                
+                // Check against all other balls
+                for (let i = 0; i < balls.length; i++) {
+                    let otherBall = balls[i];
+                    if (otherBall !== ball) {
+                        if (resolveCollision(otherBall)) {
+                            hasCollisions = true;
+                        }
+                    }
+                }
+                
+                return hasCollisions;
+            }
+            
+            function animateBall(currentBall) {
+                function update() {
+                    if (!currentBall.isMoving) return;
+                    
+                    // Apply gravity
+                    currentBall.velocityY += gravity;
+                    
+                    // Apply friction
+                    currentBall.velocityX *= friction;
+                    currentBall.velocityY *= 0.99;
+                    
+                    // Update position
+                    currentBall.posX += currentBall.velocityX;
+                    currentBall.posY += currentBall.velocityY;
+                    
+                    // Check boundaries
+                    checkBoundaries();
+                    
+                    // Check collisions
+                    checkCollisions();
+                    
+                    // Update visual position
+                    currentBall.style.left = currentBall.posX + "px";
+                    currentBall.style.top = currentBall.posY + "px";
+                    
+                    // Continue animation if still moving
+                    if (currentBall.isMoving) {
+                        requestAnimationFrame(update);
+                    } else {
+                        // Final position check after stopping
+                        checkCollisions();
+                        currentBall.style.left = currentBall.posX + "px";
+                        currentBall.style.top = currentBall.posY + "px";
+                    }
+                }
+                
+                // Start the animation
+                requestAnimationFrame(update);
+            }
+            
+            // Add ball to the array
+            balls.push(ball);
+            
+            // Start animating the ball
+            animateBall(ball);
+        }
+        
+        //slider
+        const sizePopup = document.getElementById("sizePopup");
+        const sizeSlider = document.getElementById("sizeSlider");
+        const previewBall = document.getElementById("previewBall");
+        const sizeButton = document.getElementById("sizeButton");
+        const confirmSize = document.getElementById("confirmSize");
+        const closePopup = document.getElementById("closePopup");
+
+      function openSizePopup() {
+      sizePopup.style.display = "block";
+      previewBall.style.width = ballSize + "px";
+      previewBall.style.height = ballSize + "px";
+      }
+
+     function closeSizePopup() {
+     sizePopup.style.display = "none";
+      }
+
+    sizeSlider.addEventListener("input", function() {
+    let newSize = sizeSlider.value;
+    previewBall.style.width = newSize + "px";
+    previewBall.style.height = newSize + "px";
+    });
+
+     confirmSize.addEventListener("click", function() {
+            currentBallSize = parseInt(sizeSlider.value); // Updated to use currentBallSize
+            closeSizePopup();
+        });
+
+    sizeButton.addEventListener("click", openSizePopup);
+    closePopup.addEventListener("click", closeSizePopup);
+
+   </script>
+</body>
+</html>
+
